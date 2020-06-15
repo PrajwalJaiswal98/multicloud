@@ -1,7 +1,7 @@
 provider "aws"{
 region="ap-south-1"
-access_key="AKIA4O55UEBPNTS5QB5E"
-secret_key="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"
+access_key="*****************"
+secret_key="*******************"
 profile="prajju"
 }
 //creating security group
