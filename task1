@@ -1,0 +1,157 @@
+provider "aws"{
+region="ap-south-1"
+access_key="AKIA4O55UEBPNTS5QB5E"
+secret_key="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"
+profile="prajju"
+}
+//creating security group
+resource "aws_security_group" "sg"{
+name="security_group"
+description="Allow HTTP and SSH traffic"
+vpc_id="vpc-8cfee3e4"
+
+ingress{
+description="HTTP"
+from_port=80
+to_port=80
+protocol="tcp"
+cidr_blocks=["0.0.0.0/0"]
+}
+
+ingress{
+description="SSH"
+from_port=22
+to_port=22
+protocol="tcp"
+cidr_blocks=["0.0.0.0/0"]
+}
+egress{
+from_port=80
+to_port=80
+protocol="tcp"
+cidr_blocks=["0.0.0.0/0"]
+}
+}
+//creating ec2 instance
+resource "aws_instance" "web" {
+  ami           = "ami-0447a12f28fddb066"
+  instance_type = "t2.micro"
+  key_name = "key1.pem"
+  security_groups = [ "${aws_security_group.sg.name}" ]
+
+
+  connection {
+    type     = "ssh"
+    user     = "ec2-user"
+    private_key = file("C:/Users/KIIT/Downloads/Terr/key1.pem")
+    host     = aws_instance.web.public_ip
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo yum install httpd 	git -y",
+      "sudo sudo service httpd start",
+    ]
+  }
+}
+
+//creating EBS block storage
+resource "aws_ebs_volume" "ebs1" {
+  availability_zone = aws_instance.web.availability_zone
+  size              = 1
+}
+
+//mounting the ebs to the ec2 instance
+resource "aws_volume_attachment" "ebs_att" {
+  device_name = "/dev/sdh"
+  volume_id   = "${aws_ebs_volume.ebs1.id}"
+  instance_id = "${aws_instance.web.id}"
+  force_detach = true
+}
+
+resource "null_resource" "nullremote3"  {
+
+depends_on = [
+    aws_volume_attachment.ebs_att,
+  ]
+
+
+  connection {
+    type     = "ssh"
+    user     = "ec2-user"
+    private_key = file("C:/Users/KIIT/Downloads/Terr/key1.pem")
+    host     = aws_instance.web.public_ip
+  }
+
+provisioner "remote-exec" {
+    inline = [
+      "sudo mkfs.ext4  /dev/xvdh",
+      "sudo mount  /dev/xvdh  /var/www/html",
+      "sudo rm -rf /var/www/html/*",
+      "sudo git clone https://github.com/PrajwalJaiswal98/multicloud.git /var/www/html/",
+	"sudo mv index.html /var/www/html",
+	"sudo service httpd restart"
+	
+    ]
+  }
+}
+
+
+
+
+//S3 Bucket created
+resource "aws_s3_bucket" "bucket" {
+  bucket = "pajwal-task-bucket"
+  acl    = "private"
+}
+locals {
+  s3_origin_id = "PrajwalS3Origin"
+}
+
+//Object stored in S3 Bucket
+resource "aws_s3_bucket_object" "object" {
+  bucket = "prajwal-task-bucket"
+  key    = "taskimage.jpg"
+  source = "C:/Users/KIIT/Downloads/taskimage.jpg"
+}
+
+//CDN Distribution Created
+resource "aws_cloudfront_distribution" "s3_distribution" {
+  origin {
+    domain_name = "${aws_s3_bucket.bucket.bucket_regional_domain_name}"
+    origin_id   = "${local.s3_origin_id}"
+
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+
+  default_cache_behavior {
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "${local.s3_origin_id}"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "allow-all"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
